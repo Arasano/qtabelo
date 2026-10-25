@@ -21,10 +21,15 @@
  */
 
 #include "table_document.h"
+#include "qmenu.h"
 
 #include <QSettings>
 #include <QTabBar>
 #include <QVBoxLayout>
+#include <QTableWidget>
+#include <QMenu>
+#include <QAction>
+#include <QTableWidgetItem>
 
 
 TableDocument::TableDocument(QWidget *parent)
@@ -195,21 +200,72 @@ void TableDocument::initTabBarAutoHide()
 // Slots
 //
 
-void TableDocument::slotAddTab(const int count)
+void TableDocument::showTableContextMenu(QTableWidget *table, const QPoint &pos)
 {
-    if (!m_tabs->count()) {
+    QMenu menu;
 
-        for (int i = 1; i <= count; ++i) {
-            auto widget = new QWidget;
-            widget->setAttribute(Qt::WA_DeleteOnClose);
-            m_tabs->addTab(widget, tr("Sheet %1").arg(i));
-        }
+    QAction *actionAddRow = menu.addAction(tr("Добавить строку"));
+    QAction *actionRemoveRow = menu.addAction(tr("Удалить последнюю строку"));
+    QAction *actionAddColumn = menu.addAction(tr("Добавить столбец"));
+    QAction *actionRemoveColumn = menu.addAction(tr("Удалить последний столбец"));
 
-        m_tabs->setTabsClosable(m_tabs->count() > 1);
+    QAction *selectedAction = menu.exec(table->mapToGlobal(pos));
+
+    if (!selectedAction)
+        return;
+
+    if (selectedAction == actionAddRow) {
+        table->setRowCount(table->rowCount() + 1);
+        emit contentChanged(true); // Уведомляем об изменении
+    }
+    else if (selectedAction == actionRemoveRow && table->rowCount() > 0) {
+        table->setRowCount(table->rowCount() - 1);
+        emit contentChanged(true);
+    }
+    else if (selectedAction == actionAddColumn) {
+        int newColIndex = table->columnCount();
+        table->setColumnCount(newColIndex + 1);
+        table->setHorizontalHeaderItem(newColIndex, new QTableWidgetItem(QString("Столбец %1").arg(newColIndex + 1)));
+        emit contentChanged(true);
+    }
+    else if (selectedAction == actionRemoveColumn && table->columnCount() > 0) {
+        table->setColumnCount(table->columnCount() - 1);
+        emit contentChanged(true);
     }
 }
 
+void TableDocument::slotAddTab(int count)
+{
+    if (m_tabs->count() == 0) {
+        for (int i = 0; i < count; ++i) {
+            QTableWidget *table = new QTableWidget(10, 5, this);
+            table->setAttribute(Qt::WA_DeleteOnClose);
+            table->setContextMenuPolicy(Qt::CustomContextMenu);
 
+            // Устанавливаем заголовки столбцов
+            QStringList headers;
+            for (int col = 0; col < 5; ++col) {
+                headers << QString("Столбец %1").arg(col + 1);
+            }
+            table->setHorizontalHeaderLabels(headers);
+
+            // Подключаем контекстное меню
+            connect(table, &QTableWidget::customContextMenuRequested,
+                    this, [this, table](const QPoint &pos) {
+                        showTableContextMenu(table, pos);
+                    });
+
+            // Подключаем сигнал изменения ячеек
+            connect(table, &QTableWidget::itemChanged,
+                    this, [this](QTableWidgetItem *item) {
+                        Q_UNUSED(item);
+                        emit contentChanged(true);
+                    });
+
+            m_tabs->addTab(table, tr("Лист %1").arg(i + 1));
+        }
+    }
+}
 void TableDocument::slotCloseTab(const int index)
 {
     if (m_tabs->count() > 1) {

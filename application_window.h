@@ -37,6 +37,10 @@ class DocumentManager;
 class DocumentWidget;
 class RecentDocumentList;
 
+class QDockWidget;
+class QQuickWidget;
+class TableInfoProvider;
+
 
 class ApplicationWindow : public QMainWindow
 {
@@ -76,6 +80,12 @@ private:
     DocumentWidget *createDocument();
     bool loadDocument(const QUrl &url);
     bool saveDocument(DocumentWidget *document, const QUrl &altUrl);
+
+    void updateTableInfo();
+
+    QDockWidget *m_infoDock;
+    QQuickWidget *m_infoQuickWidget;
+    TableInfoProvider *m_tableInfoProvider;
 
 private slots:
     void updateActionsDocumentTabPosition(const QTabWidget::TabPosition position);

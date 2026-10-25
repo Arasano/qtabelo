@@ -49,7 +49,11 @@
 #include "preferences_dialog.h"
 #include "properties_dialog.h"
 #include "recent_document_list.h"
+#include "table_info_provider.h"
 
+#include <QDockWidget>
+#include <QQuickWidget>
+#include <QQmlContext>
 
 ApplicationWindow::ApplicationWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -63,6 +67,29 @@ ApplicationWindow::ApplicationWindow(QWidget *parent)
     m_documentManager->setTabsClosable(true);
     m_documentManager->setTabsMovable(true);
     setCentralWidget(m_documentManager);
+
+
+    // Создаём поставщик данных
+    m_tableInfoProvider = new TableInfoProvider(this);
+
+    // Создаём QQuickWidget
+    m_infoQuickWidget = new QQuickWidget;
+    m_infoQuickWidget->setResizeMode(QQuickWidget::SizeRootObjectToView);
+
+    // Регистрируем объект в QML-контексте (ВАЖНО: до setSource!)
+    m_infoQuickWidget->rootContext()->setContextProperty("tableInfo", m_tableInfoProvider);
+
+    // Загружаем QML-файл
+    m_infoQuickWidget->setSource(QUrl(QStringLiteral("qrc:/TableInfo.qml")));
+
+    // Создаём док-виджет и размещаем в нём QQuickWidget
+    m_infoDock = new QDockWidget(tr("Table Info"), this);
+    m_infoDock->setObjectName(QStringLiteral("dockTableInfo"));
+    m_infoDock->setWidget(m_infoQuickWidget);
+    m_infoDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+
+    addDockWidget(Qt::RightDockWidgetArea, m_infoDock);
+
 
     connect(m_documentManager, &DocumentManager::subWindowActivated, this, &ApplicationWindow::documentActivated);
 
@@ -940,6 +967,10 @@ DocumentWidget *ApplicationWindow::createDocument()
     connect(docWindow, &DocumentWindow::destroyed, this, &ApplicationWindow::documentClosed);
     connect(this, &ApplicationWindow::documentCountChanged, document, &DocumentWidget::documentCountChanged);
     connect(this, &ApplicationWindow::documentCountChanged, docWindow, &DocumentWindow::documentCountChanged);
+    // Connections: Content
+    connect(document, &TableDocument::contentChanged, this, [this]() {
+        updateTableInfo();
+    });
 
     // Initialize
     document->initTabBarVisible();
@@ -998,6 +1029,41 @@ bool ApplicationWindow::saveDocument(DocumentWidget *document, const QUrl &altUr
 }
 
 
+void ApplicationWindow::updateTableInfo()
+{
+    DocumentWidget *document = activeDocument();
+
+    if (!document) {
+        m_tableInfoProvider->setRowCount(0);
+        m_tableInfoProvider->setColumnCount(0);
+        m_tableInfoProvider->setModified(false);
+        return;
+    }
+
+    // Обновляем состояние документа
+    m_tableInfoProvider->setModified(document->isModified());
+
+    // Ищем таблицу в иерархии документа
+    QTabWidget *tabs = document->findChild<QTabWidget*>();
+    if (!tabs) {
+        m_tableInfoProvider->setRowCount(0);
+        m_tableInfoProvider->setColumnCount(0);
+        return;
+    }
+
+    // Получаем текущую таблицу
+    QTableWidget *table = qobject_cast<QTableWidget*>(tabs->currentWidget());
+    if (table) {
+        m_tableInfoProvider->setRowCount(table->rowCount());
+        m_tableInfoProvider->setColumnCount(table->columnCount());
+    } else {
+        m_tableInfoProvider->setRowCount(0);
+        m_tableInfoProvider->setColumnCount(0);
+    }
+}
+
+
+
 //
 //
 //
@@ -1032,6 +1098,8 @@ void ApplicationWindow::documentActivated(QMdiSubWindow *subWindow)
         updateActionsSheetTabBarPosition(QTabWidget::South);
         m_actionSheetTabBarAutoHide->setChecked(true);
     }
+
+    updateTableInfo();
 }
 
 
@@ -1062,6 +1130,7 @@ void ApplicationWindow::documentModifiedChanged(const bool modified)
 
     if (sender() == activeDocument())
         updateWindowModified();
+    updateTableInfo();
 }
 
 

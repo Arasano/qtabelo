@@ -20,7 +20,11 @@
 # along with QTabelo.  If not, see <https://www.gnu.org/licenses/>.
 #
 
-QT += core gui svg
+QT += core gui widgets svg
+QT += quick quickwidgets
+
+QT += svg
+greaterThan(QT_MAJOR_VERSION, 5): QT += svgwidgets
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
@@ -46,7 +50,8 @@ SOURCES += \
     properties_pages.cpp \
     recent_document_list.cpp \
     rename_dialog.cpp \
-    table_document.cpp
+    table_document.cpp \
+    table_info_provider.cpp
 
 HEADERS += \
     about_dialog.h \
@@ -63,10 +68,12 @@ HEADERS += \
     properties_pages.h \
     recent_document_list.h \
     rename_dialog.h \
-    table_document.h
+    table_document.h \
+    table_info_provider.h
 
 RESOURCES += \
-    icons.qrc
+    icons.qrc \
+    qml.qrc
 
 CONFIG += lrelease
 
@@ -74,3 +81,6 @@ CONFIG += lrelease
 qnx: target.path = /tmp/$${TARGET}/bin
 else: unix:!android: target.path = /opt/$${TARGET}/bin
 !isEmpty(target.path): INSTALLS += target
+
+DISTFILES += \
+    TableInfo.qml

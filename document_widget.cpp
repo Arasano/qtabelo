@@ -35,11 +35,12 @@
 
 
 DocumentWidget::DocumentWidget(QWidget *parent)
-    : TableDocument(parent)
-    , m_modified{false}
-    , m_url{QUrl()}
+    : TableDocument(parent), m_modified{false}, m_url{QUrl()}
 {
     setAttribute(Qt::WA_DeleteOnClose);
+
+    // Подключаем сигнал изменения содержимого таблицы к флагу modified
+    connect(this, &TableDocument::contentChanged, this, &DocumentWidget::setModified);
 }
 
 

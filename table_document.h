@@ -23,6 +23,7 @@
 #ifndef TABLE_DOCUMENT_H
 #define TABLE_DOCUMENT_H
 
+#include "qtablewidget.h"
 #include <QWidget>
 
 #include <QTabWidget>
@@ -50,6 +51,8 @@ signals:
     void tabBarPositionChanged(const QTabWidget::TabPosition position);
     void tabBarAutoHideChanged(const bool enabled);
 
+    void contentChanged(bool modified);
+
 public slots:
     void setTabBarVisible(const bool visible);
     void resetTabBarVisible();
@@ -62,6 +65,8 @@ public slots:
     void setTabBarAutoHide(const bool enabled);
     void resetTabBarAutoHide();
     void initTabBarAutoHide();
+
+    void showTableContextMenu(QTableWidget *table, const QPoint &pos);
 
 protected slots:
     void slotAddTab(const int count);
