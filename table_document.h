@@ -71,6 +71,10 @@ public slots:
 protected slots:
     void slotAddTab(const int count);
 
+    void copySelection(QTableWidget *table);
+    void cutSelection(QTableWidget *table);
+    void pasteSelection(QTableWidget *table);
+
 private:
     void loadSettings();
 

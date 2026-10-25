@@ -30,7 +30,10 @@
 #include <QMenu>
 #include <QAction>
 #include <QTableWidgetItem>
-
+#include <QClipboard>
+#include <QApplication>
+#include <QItemSelectionRange>
+#include <QDebug>
 
 TableDocument::TableDocument(QWidget *parent)
     : QWidget(parent)
@@ -209,14 +212,26 @@ void TableDocument::showTableContextMenu(QTableWidget *table, const QPoint &pos)
     QAction *actionAddColumn = menu.addAction(tr("Добавить столбец"));
     QAction *actionRemoveColumn = menu.addAction(tr("Удалить последний столбец"));
 
+    menu.addSeparator();  // Разделитель
+
+    QAction *actionCopy = menu.addAction(tr("Копировать"));
+    actionCopy->setShortcut(QKeySequence::Copy);
+
+    QAction *actionCut = menu.addAction(tr("Вырезать"));
+    actionCut->setShortcut(QKeySequence::Cut);
+
+    QAction *actionPaste = menu.addAction(tr("Вставить"));
+    actionPaste->setShortcut(QKeySequence::Paste);
+
     QAction *selectedAction = menu.exec(table->mapToGlobal(pos));
 
     if (!selectedAction)
         return;
 
+    // Обработка действий со строками/столбцами (уже есть)
     if (selectedAction == actionAddRow) {
         table->setRowCount(table->rowCount() + 1);
-        emit contentChanged(true); // Уведомляем об изменении
+        emit contentChanged(true);
     }
     else if (selectedAction == actionRemoveRow && table->rowCount() > 0) {
         table->setRowCount(table->rowCount() - 1);
@@ -232,7 +247,154 @@ void TableDocument::showTableContextMenu(QTableWidget *table, const QPoint &pos)
         table->setColumnCount(table->columnCount() - 1);
         emit contentChanged(true);
     }
+    // Обработка буфера обмена
+    else if (selectedAction == actionCopy) {
+        copySelection(table);
+    }
+    else if (selectedAction == actionCut) {
+        cutSelection(table);
+    }
+    else if (selectedAction == actionPaste) {
+        pasteSelection(table);
+    }
 }
+
+void TableDocument::copySelection(QTableWidget *table)
+{
+    if (!table || table->selectedItems().isEmpty())
+        return;
+
+    // Находим границы выделения
+    int minRow = table->rowCount();
+    int maxRow = 0;
+    int minCol = table->columnCount();
+    int maxCol = 0;
+
+    for (QTableWidgetItem *item : table->selectedItems()) {
+        minRow = qMin(minRow, item->row());
+        maxRow = qMax(maxRow, item->row());
+        minCol = qMin(minCol, item->column());
+        maxCol = qMax(maxCol, item->column());
+    }
+
+    // Формируем текст с разделителями
+    QString clipboardText;
+    for (int row = minRow; row <= maxRow; ++row) {
+        QStringList rowText;
+        for (int col = minCol; col <= maxCol; ++col) {
+            QTableWidgetItem *item = table->item(row, col);
+            rowText << (item ? item->text() : QString());
+        }
+        clipboardText += rowText.join('\t') + '\n';
+    }
+
+    // Копируем в буфер обмена
+    QApplication::clipboard()->setText(clipboardText);
+}
+
+void TableDocument::cutSelection(QTableWidget *table)
+{
+    if (!table || table->selectedItems().isEmpty())
+        return;
+
+    // Сначала копируем
+    copySelection(table);
+
+    // Затем очищаем выделенные ячейки
+    for (QTableWidgetItem *item : table->selectedItems()) {
+        item->setText(QString());
+    }
+
+    emit contentChanged(true);
+}
+
+void TableDocument::pasteSelection(QTableWidget *table)
+{
+    if (!table)
+        return;
+
+    QString clipboardText = QApplication::clipboard()->text();
+    if (clipboardText.isEmpty()) {
+        qDebug() << "[DEBUG] Буфер обмена пуст";
+        return;
+    }
+
+    // Разбираем текст из буфера
+    QStringList rows = clipboardText.split('\n', Qt::SkipEmptyParts);
+    if (rows.isEmpty())
+        return;
+
+    // Определяем размеры вставляемых данных
+    int pasteRows = rows.count();
+    int pasteCols = 0;
+    for (const QString &row : rows) {
+        pasteCols = qMax(pasteCols, row.split('\t').count());
+    }
+
+    // ==========================================
+    // ОПРЕДЕЛЕНИЕ НАЧАЛЬНОЙ ПОЗИЦИИ С ОТЛАДКОЙ
+    // ==========================================
+    int startRow = table->currentRow();
+    int startCol = table->currentColumn();
+
+
+    if (startRow == -1 || startCol == -1) {
+        if (!table->selectedItems().isEmpty()) {
+            int minR = table->rowCount();
+            int minC = table->columnCount();
+            for (QTableWidgetItem *item : table->selectedItems()) {
+                if (item->row() < minR) minR = item->row();
+                if (item->column() < minC) minC = item->column();
+            }
+            startRow = minR;
+            startCol = minC;
+        } else {
+            startRow = 0;
+            startCol = 0;
+        }
+    }
+
+    // Вычисляем необходимые размеры таблицы
+    int requiredRows = startRow + pasteRows;
+    int requiredCols = startCol + pasteCols;
+
+    // Расширяем таблицу если нужно
+    bool changed = false;
+    if (requiredRows > table->rowCount()) {
+        table->setRowCount(requiredRows);
+        changed = true;
+    }
+    if (requiredCols > table->columnCount()) {
+        table->setColumnCount(requiredCols);
+        changed = true;
+
+        // Обновляем заголовки новых столбцов
+        for (int col = table->columnCount() - pasteCols; col < table->columnCount(); ++col) {
+            if (!table->horizontalHeaderItem(col)) {
+                table->setHorizontalHeaderItem(col, new QTableWidgetItem(QString("Столбец %1").arg(col + 1)));
+            }
+        }
+    }
+
+    // Вставляем данные
+    for (int i = 0; i < pasteRows; ++i) {
+        QStringList cells = rows[i].split('\t');
+        for (int j = 0; j < cells.count() && j < pasteCols; ++j) {
+            int row = startRow + i;
+            int col = startCol + j;
+
+            QTableWidgetItem *item = table->item(row, col);
+            if (!item) {
+                item = new QTableWidgetItem;
+                table->setItem(row, col, item);
+            }
+            item->setText(cells[j]);
+        }
+    }
+
+    emit contentChanged(true);
+}
+
 
 void TableDocument::slotAddTab(int count)
 {
@@ -263,6 +425,31 @@ void TableDocument::slotAddTab(int count)
                     });
 
             m_tabs->addTab(table, tr("Лист %1").arg(i + 1));
+
+
+            // Добавляем действия для горячих клавиш
+            QAction *copyAction = new QAction(tr("Copy"), table);
+            copyAction->setShortcut(QKeySequence::Copy);
+            connect(copyAction, &QAction::triggered, table, [this, table]() {
+                copySelection(table);
+            });
+            table->addAction(copyAction);
+
+            QAction *cutAction = new QAction(tr("Cut"), table);
+            cutAction->setShortcut(QKeySequence::Cut);
+            connect(cutAction, &QAction::triggered, table, [this, table]() {
+                cutSelection(table);
+            });
+            table->addAction(cutAction);
+
+            QAction *pasteAction = new QAction(tr("Paste"), table);
+            pasteAction->setShortcut(QKeySequence::Paste);
+            connect(pasteAction, &QAction::triggered, table, [this, table]() {
+                pasteSelection(table);
+            });
+            table->addAction(pasteAction);
+
+            table->setContextMenuPolicy(Qt::CustomContextMenu);
         }
     }
 }
