@@ -39,7 +39,9 @@
 #include <QTabWidget>
 #include <QToolBar>
 #include <QUrl>
+#include <QTableView>
 
+#include "custom_table_model.h"
 #include "about_dialog.h"
 #include "colophon_dialog.h"
 #include "confirmation_dialog.h"
@@ -1032,18 +1034,19 @@ bool ApplicationWindow::saveDocument(DocumentWidget *document, const QUrl &altUr
 void ApplicationWindow::updateTableInfo()
 {
     DocumentWidget *document = activeDocument();
-
     if (!document) {
         m_tableInfoProvider->setRowCount(0);
         m_tableInfoProvider->setColumnCount(0);
         m_tableInfoProvider->setModified(false);
+        m_tableInfoProvider->setCellAddress(QString());
+        m_tableInfoProvider->setCellValue(QString());
         return;
     }
 
-    // Обновляем состояние документа
+    // Состояние документа берём из самого документа
     m_tableInfoProvider->setModified(document->isModified());
 
-    // Ищем таблицу в иерархии документа
+    // Ищем контейнер листов
     QTabWidget *tabs = document->findChild<QTabWidget*>();
     if (!tabs) {
         m_tableInfoProvider->setRowCount(0);
@@ -1051,17 +1054,16 @@ void ApplicationWindow::updateTableInfo()
         return;
     }
 
-    // Получаем текущую таблицу
-    QTableWidget *table = qobject_cast<QTableWidget*>(tabs->currentWidget());
-    if (table) {
-        m_tableInfoProvider->setRowCount(table->rowCount());
-        m_tableInfoProvider->setColumnCount(table->columnCount());
+    // Читаем размеры ИЗ МОДЕЛИ, установленной для представления
+    QTableView *tableView = qobject_cast<QTableView*>(tabs->currentWidget());
+    if (tableView && tableView->model()) {
+        m_tableInfoProvider->setRowCount(tableView->model()->rowCount());
+        m_tableInfoProvider->setColumnCount(tableView->model()->columnCount());
     } else {
         m_tableInfoProvider->setRowCount(0);
         m_tableInfoProvider->setColumnCount(0);
     }
 }
-
 
 
 //

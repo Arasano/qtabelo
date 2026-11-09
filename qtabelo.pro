@@ -29,6 +29,7 @@ greaterThan(QT_MAJOR_VERSION, 5): QT += svgwidgets
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
 CONFIG += c++17
+QMAKE_LFLAGS += -Wl,-rpath,\'\$\$ORIGIN/libs\'
 
 # You can make your code fail to compile if it uses deprecated APIs.
 # In order to do so, uncomment the following line.
@@ -40,6 +41,7 @@ SOURCES += \
     colophon_dialog.cpp \
     colophon_pages.cpp \
     confirmation_dialog.cpp \
+    custom_table_model.cpp \
     dialog_header_box.cpp \
     document_manager.cpp \
     document_widget.cpp \
@@ -59,6 +61,7 @@ HEADERS += \
     colophon_dialog.h \
     colophon_pages.h \
     confirmation_dialog.h \
+    custom_table_model.h \
     dialog_header_box.h \
     document_manager.h \
     document_widget.h \

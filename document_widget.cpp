@@ -39,21 +39,17 @@ DocumentWidget::DocumentWidget(QWidget *parent)
 {
     setAttribute(Qt::WA_DeleteOnClose);
 
-    // Подключаем сигнал изменения содержимого таблицы к флагу modified
     connect(this, &TableDocument::contentChanged, this, &DocumentWidget::setModified);
 }
 
 
 void DocumentWidget::closeEvent(QCloseEvent *event)
 {
+    cleanupModels();
     saveSettings();
     event->accept();
 }
 
-
-//
-// Property: modified
-//
 
 bool DocumentWidget::isModified() const
 {
@@ -83,10 +79,6 @@ void DocumentWidget::initModified()
 }
 
 
-//
-// Property: url
-//
-
 QUrl DocumentWidget::url() const
 {
     return m_url;
@@ -115,9 +107,6 @@ void DocumentWidget::initUrl()
 }
 
 
-//
-// Document
-//
 
 void DocumentWidget::documentCountChanged(const int count)
 {
@@ -125,9 +114,6 @@ void DocumentWidget::documentCountChanged(const int count)
 }
 
 
-//
-//
-//
 
 void DocumentWidget::copyPathToClipboard()
 {

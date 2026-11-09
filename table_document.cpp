@@ -1,38 +1,14 @@
-/**
- * Copyright 2022 naracanto <https://naracanto.github.io>.
- *
- * This file is part of QTabelo <https://github.com/beletalabs/qtabelo>.
- *
- * QTabelo is an open source table editor written in C++ using the
- * Qt framework.
- *
- * QTabelo is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published
- * by the Free Software Foundation, either version 3 of the License,
- * or (at your option) any later version.
- *
- * QTabelo is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with QTabelo.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 #include "table_document.h"
-#include "qmenu.h"
-
+#include "custom_table_model.h"
+#include <QMenu>
+#include <QAction>
+#include <QClipboard>
+#include <QApplication>
+#include <QItemSelectionModel>
+#include <QAbstractItemModel>
 #include <QSettings>
 #include <QTabBar>
 #include <QVBoxLayout>
-#include <QTableWidget>
-#include <QMenu>
-#include <QAction>
-#include <QTableWidgetItem>
-#include <QClipboard>
-#include <QApplication>
-#include <QItemSelectionRange>
 #include <QDebug>
 
 TableDocument::TableDocument(QWidget *parent)
@@ -45,7 +21,6 @@ TableDocument::TableDocument(QWidget *parent)
     m_tabs->setTabPosition(QTabWidget::South);
     m_tabs->setTabBarAutoHide(true);
     connect(m_tabs, &QTabWidget::tabCloseRequested, this, &TableDocument::slotCloseTab);
-
     loadSettings();
 
     // Main layout
@@ -54,54 +29,31 @@ TableDocument::TableDocument(QWidget *parent)
     setLayout(mainLayout);
 }
 
-
 void TableDocument::loadSettings()
 {
     QSettings settings;
-
-    // Sheet Tab Bar Visible
     const bool visible = settings.value(QStringLiteral("Document/SheetTabBarVisible"), true).toBool();
     setTabBarVisible(visible);
 
-    // Sheet Tab Bar Position
     const int value = settings.value(QStringLiteral("Document/SheetTabBarPosition"), QTabWidget::South).toInt();
     const QList<int> values = {QTabWidget::North, QTabWidget::South};
     const QTabWidget::TabPosition position = values.contains(value) ? static_cast<QTabWidget::TabPosition>(value) : QTabWidget::South;
     setTabBarPosition(position);
 
-    // Sheet Tab Bar Auto Hide
     const bool enabled = settings.value(QStringLiteral("Document/SheetTabBarAutoHide"), true).toBool();
     setTabBarAutoHide(enabled);
 }
 
-
 void TableDocument::saveSettings()
 {
     QSettings settings;
-
-    // Sheet Tab Bar Visible
-//    const bool visible = isTabBarVisible();
-//    settings.setValue(QStringLiteral("Document/SheetTabBarVisible"), visible);
-
-    // Sheet Tab Bar Position
-//    const QTabWidget::TabPosition position = tabBarPosition();
-//    settings.setValue(QStringLiteral("Document/SheetTabBarPosition"), position);
-
-    // Sheet Tab Bar Auto Hide
-//    const bool enabled = isTabBarAutoHide();
-//    settings.setValue(QStringLiteral("Document/SheetTabBarAutoHide"), enabled);
+    // settings.setValue(QStringLiteral("Document/SheetTabBarVisible"), isTabBarVisible());
+    // settings.setValue(QStringLiteral("Document/SheetTabBarPosition"), tabBarPosition());
+    // settings.setValue(QStringLiteral("Document/SheetTabBarAutoHide"), isTabBarAutoHide());
 }
 
 
-//
-// Property: tabBarVisible
-//
-
-bool TableDocument::isTabBarVisible() const
-{
-    return m_tabBarVisible;
-}
-
+bool TableDocument::isTabBarVisible() const { return m_tabBarVisible; }
 
 void TableDocument::setTabBarVisible(const bool visible)
 {
@@ -112,7 +64,6 @@ void TableDocument::setTabBarVisible(const bool visible)
     }
 }
 
-
 void TableDocument::resetTabBarVisible()
 {
     m_tabBarVisible = true;
@@ -120,13 +71,11 @@ void TableDocument::resetTabBarVisible()
     emit tabBarVisibleChanged(isTabBarVisible());
 }
 
-
 void TableDocument::initTabBarVisible()
 {
     _setTabBarVisible(isTabBarVisible());
     emit tabBarVisibleChanged(isTabBarVisible());
 }
-
 
 void TableDocument::_setTabBarVisible(const bool visible)
 {
@@ -135,15 +84,7 @@ void TableDocument::_setTabBarVisible(const bool visible)
 }
 
 
-//
-// Property: tabBarPosition
-//
-
-QTabWidget::TabPosition TableDocument::tabBarPosition() const
-{
-    return m_tabs->tabPosition();
-}
-
+QTabWidget::TabPosition TableDocument::tabBarPosition() const { return m_tabs->tabPosition(); }
 
 void TableDocument::setTabBarPosition(const QTabWidget::TabPosition position)
 {
@@ -153,13 +94,11 @@ void TableDocument::setTabBarPosition(const QTabWidget::TabPosition position)
     }
 }
 
-
 void TableDocument::resetTabBarPosition()
 {
     m_tabs->setTabPosition(QTabWidget::South);
     emit tabBarPositionChanged(tabBarPosition());
 }
-
 
 void TableDocument::initTabBarPosition()
 {
@@ -167,15 +106,7 @@ void TableDocument::initTabBarPosition()
 }
 
 
-//
-// Property: tabBarAutoHide
-//
-
-bool TableDocument::isTabBarAutoHide() const
-{
-    return m_tabs->tabBarAutoHide();
-}
-
+bool TableDocument::isTabBarAutoHide() const { return m_tabs->tabBarAutoHide(); }
 
 void TableDocument::setTabBarAutoHide(const bool enabled)
 {
@@ -185,284 +116,283 @@ void TableDocument::setTabBarAutoHide(const bool enabled)
     }
 }
 
-
 void TableDocument::resetTabBarAutoHide()
 {
     m_tabs->setTabBarAutoHide(true);
     emit tabBarAutoHideChanged(isTabBarAutoHide());
 }
 
-
 void TableDocument::initTabBarAutoHide()
 {
     emit tabBarAutoHideChanged(isTabBarAutoHide());
 }
 
-
-//
-// Slots
-//
-
-void TableDocument::showTableContextMenu(QTableWidget *table, const QPoint &pos)
+// === slotAddTab: creates QTableView + CustomTableModel ===
+void TableDocument::slotAddTab(const int count)
 {
-    QMenu menu;
+    if (m_tabs->count() == 0) {
+        for (int i = 0; i < count; ++i) {
+            // create view
+            auto *tableView = new QTableView();
+            tableView->setObjectName(QStringLiteral("Sheet%1").arg(i + 1));
 
-    QAction *actionAddRow = menu.addAction(tr("Добавить строку"));
-    QAction *actionRemoveRow = menu.addAction(tr("Удалить последнюю строку"));
-    QAction *actionAddColumn = menu.addAction(tr("Добавить столбец"));
-    QAction *actionRemoveColumn = menu.addAction(tr("Удалить последний столбец"));
+            // create model & link to view
+            auto *model = new CustomTableModel(tableView);
+            tableView->setModel(model);
 
-    menu.addSeparator();  // Разделитель
+            // signals for QML-panel
+            connect(tableView->selectionModel(), &QItemSelectionModel::currentChanged,
+                    this, [this]() { refreshCurrentCell(); });
+            connect(model, &QAbstractItemModel::dataChanged,
+                    this, [this]() { refreshCurrentCell(); });
 
-    QAction *actionCopy = menu.addAction(tr("Копировать"));
-    actionCopy->setShortcut(QKeySequence::Copy);
+            // initialize blank table 15x5
+            QStringList headers;
+            for (int col = 0; col < 5; ++col) {
+                headers << "";
+            }
+            model->initialize(15, 5, headers);
 
-    QAction *actionCut = menu.addAction(tr("Вырезать"));
-    actionCut->setShortcut(QKeySequence::Cut);
+            // context menu
+            tableView->setContextMenuPolicy(Qt::CustomContextMenu);
+            connect(tableView, &QTableView::customContextMenuRequested,
+                    this, [this, tableView](const QPoint &pos) {
+                        showTableContextMenu(tableView, pos);
+                    });
 
-    QAction *actionPaste = menu.addAction(tr("Вставить"));
-    actionPaste->setShortcut(QKeySequence::Paste);
+            // data changed signals
+            connect(model, &QAbstractItemModel::dataChanged,
+                    this, &TableDocument::onModelDataChanged);
 
-    QAction *selectedAction = menu.exec(table->mapToGlobal(pos));
-
-    if (!selectedAction)
-        return;
-
-    // Обработка действий со строками/столбцами (уже есть)
-    if (selectedAction == actionAddRow) {
-        table->setRowCount(table->rowCount() + 1);
-        emit contentChanged(true);
-    }
-    else if (selectedAction == actionRemoveRow && table->rowCount() > 0) {
-        table->setRowCount(table->rowCount() - 1);
-        emit contentChanged(true);
-    }
-    else if (selectedAction == actionAddColumn) {
-        int newColIndex = table->columnCount();
-        table->setColumnCount(newColIndex + 1);
-        table->setHorizontalHeaderItem(newColIndex, new QTableWidgetItem(QString("Столбец %1").arg(newColIndex + 1)));
-        emit contentChanged(true);
-    }
-    else if (selectedAction == actionRemoveColumn && table->columnCount() > 0) {
-        table->setColumnCount(table->columnCount() - 1);
-        emit contentChanged(true);
-    }
-    // Обработка буфера обмена
-    else if (selectedAction == actionCopy) {
-        copySelection(table);
-    }
-    else if (selectedAction == actionCut) {
-        cutSelection(table);
-    }
-    else if (selectedAction == actionPaste) {
-        pasteSelection(table);
+            // add tab
+            m_tabs->addTab(tableView, tr("Sheet %1").arg(i + 1));
+        }
     }
 }
 
-void TableDocument::copySelection(QTableWidget *table)
+void TableDocument::onModelDataChanged()
 {
-    if (!table || table->selectedItems().isEmpty())
+    emit contentChanged(true);
+}
+
+
+void TableDocument::showTableContextMenu(QTableView *tableView, const QPoint &pos)
+{
+    if (!tableView)
         return;
 
-    // Находим границы выделения
-    int minRow = table->rowCount();
+    auto *model = qobject_cast<CustomTableModel*>(tableView->model());
+    if (!model)
+        return;
+
+    QMenu menu;
+    QAction *actionAddRow = menu.addAction(tr("Добавить строку"));
+    QAction *actionRemoveRow = menu.addAction(tr("Удалить строку"));
+    QAction *actionAddColumn = menu.addAction(tr("Добавить столбец"));
+    QAction *actionRemoveColumn = menu.addAction(tr("Удалить столбец"));
+    menu.addSeparator();
+    QAction *actionCopy = menu.addAction(tr("Копировать"));
+    QAction *actionCut = menu.addAction(tr("Вырезать"));
+    QAction *actionPaste = menu.addAction(tr("Вставить"));
+
+    QAction *selectedAction = menu.exec(tableView->mapToGlobal(pos));
+    if (!selectedAction)
+        return;
+
+    // get current cursor position
+    QModelIndex currentIndex = tableView->currentIndex();
+    int currentRow = currentIndex.isValid() ? currentIndex.row() : 0;
+    int currentCol = currentIndex.isValid() ? currentIndex.column() : 0;
+
+    if (selectedAction == actionAddRow) {
+        model->insertRows(currentRow + 1, 1);
+        emit contentChanged(true);
+    }
+    else if (selectedAction == actionRemoveRow && model->rowCount() > 0) {
+        int rowToRemove = currentRow < model->rowCount() ? currentRow : model->rowCount() - 1;
+        model->removeRows(rowToRemove, 1);
+        emit contentChanged(true);
+    }
+    else if (selectedAction == actionAddColumn) {
+        model->insertColumns(currentCol + 1, 1);
+        emit contentChanged(true);
+    }
+    else if (selectedAction == actionRemoveColumn && model->columnCount() > 0) {
+        int colToRemove = currentCol < model->columnCount() ? currentCol : model->columnCount() - 1;
+        model->removeColumns(colToRemove, 1);
+        emit contentChanged(true);
+    }
+    else if (selectedAction == actionCopy) {
+        copySelection(tableView);
+    }
+    else if (selectedAction == actionCut) {
+        cutSelection(tableView);
+    }
+    else if (selectedAction == actionPaste) {
+        pasteSelection(tableView);
+    }
+}
+
+
+void TableDocument::copySelection(QTableView *tableView)
+{
+    if (!tableView || !tableView->selectionModel())
+        return;
+
+    auto *model = tableView->model();
+    if (!model)
+        return;
+
+    QModelIndexList selected = tableView->selectionModel()->selectedIndexes();
+    if (selected.isEmpty())
+        return;
+
+    // get highlight borders
+    int minRow = model->rowCount();
     int maxRow = 0;
-    int minCol = table->columnCount();
+    int minCol = model->columnCount();
     int maxCol = 0;
 
-    for (QTableWidgetItem *item : table->selectedItems()) {
-        minRow = qMin(minRow, item->row());
-        maxRow = qMax(maxRow, item->row());
-        minCol = qMin(minCol, item->column());
-        maxCol = qMax(maxCol, item->column());
+    for (const QModelIndex &index : selected) {
+        minRow = qMin(minRow, index.row());
+        maxRow = qMax(maxRow, index.row());
+        minCol = qMin(minCol, index.column());
+        maxCol = qMax(maxCol, index.column());
     }
 
-    // Формируем текст с разделителями
     QString clipboardText;
     for (int row = minRow; row <= maxRow; ++row) {
         QStringList rowText;
         for (int col = minCol; col <= maxCol; ++col) {
-            QTableWidgetItem *item = table->item(row, col);
-            rowText << (item ? item->text() : QString());
+            QModelIndex idx = model->index(row, col);
+            rowText << model->data(idx, Qt::DisplayRole).toString();
         }
         clipboardText += rowText.join('\t') + '\n';
     }
 
-    // Копируем в буфер обмена
     QApplication::clipboard()->setText(clipboardText);
 }
 
-void TableDocument::cutSelection(QTableWidget *table)
+void TableDocument::cutSelection(QTableView *tableView)
 {
-    if (!table || table->selectedItems().isEmpty())
+    if (!tableView || !tableView->selectionModel())
         return;
 
-    // Сначала копируем
-    copySelection(table);
+    auto *model = tableView->model();
+    if (!model)
+        return;
 
-    // Затем очищаем выделенные ячейки
-    for (QTableWidgetItem *item : table->selectedItems()) {
-        item->setText(QString());
+    // copy strings
+    copySelection(tableView);
+
+    // clean highlight strings
+    QModelIndexList selected = tableView->selectionModel()->selectedIndexes();
+    for (const QModelIndex &index : selected) {
+        model->setData(index, QVariant(), Qt::EditRole);
     }
 
     emit contentChanged(true);
 }
 
-void TableDocument::pasteSelection(QTableWidget *table)
+void TableDocument::pasteSelection(QTableView *tableView)
 {
-    if (!table)
+    if (!tableView)
+        return;
+
+    auto *model = qobject_cast<CustomTableModel*>(tableView->model());
+    if (!model)
         return;
 
     QString clipboardText = QApplication::clipboard()->text();
-    if (clipboardText.isEmpty()) {
-        qDebug() << "[DEBUG] Буфер обмена пуст";
+    if (clipboardText.isEmpty())
         return;
-    }
 
-    // Разбираем текст из буфера
     QStringList rows = clipboardText.split('\n', Qt::SkipEmptyParts);
     if (rows.isEmpty())
         return;
 
-    // Определяем размеры вставляемых данных
     int pasteRows = rows.count();
     int pasteCols = 0;
     for (const QString &row : rows) {
         pasteCols = qMax(pasteCols, row.split('\t').count());
     }
 
-    // ==========================================
-    // ОПРЕДЕЛЕНИЕ НАЧАЛЬНОЙ ПОЗИЦИИ С ОТЛАДКОЙ
-    // ==========================================
-    int startRow = table->currentRow();
-    int startCol = table->currentColumn();
-
-
-    if (startRow == -1 || startCol == -1) {
-        if (!table->selectedItems().isEmpty()) {
-            int minR = table->rowCount();
-            int minC = table->columnCount();
-            for (QTableWidgetItem *item : table->selectedItems()) {
-                if (item->row() < minR) minR = item->row();
-                if (item->column() < minC) minC = item->column();
-            }
-            startRow = minR;
-            startCol = minC;
-        } else {
-            startRow = 0;
-            startCol = 0;
-        }
+    int startRow = 0;
+    int startCol = 0;
+    QModelIndex currentIndex = tableView->currentIndex();
+    if (currentIndex.isValid()) {
+        startRow = currentIndex.row();
+        startCol = currentIndex.column();
     }
 
-    // Вычисляем необходимые размеры таблицы
     int requiredRows = startRow + pasteRows;
     int requiredCols = startCol + pasteCols;
 
-    // Расширяем таблицу если нужно
-    bool changed = false;
-    if (requiredRows > table->rowCount()) {
-        table->setRowCount(requiredRows);
-        changed = true;
+    if (requiredRows > model->rowCount()) {
+        model->insertRows(model->rowCount(), requiredRows - model->rowCount());
     }
-    if (requiredCols > table->columnCount()) {
-        table->setColumnCount(requiredCols);
-        changed = true;
-
-        // Обновляем заголовки новых столбцов
-        for (int col = table->columnCount() - pasteCols; col < table->columnCount(); ++col) {
-            if (!table->horizontalHeaderItem(col)) {
-                table->setHorizontalHeaderItem(col, new QTableWidgetItem(QString("Столбец %1").arg(col + 1)));
-            }
-        }
+    if (requiredCols > model->columnCount()) {
+        model->insertColumns(model->columnCount(), requiredCols - model->columnCount());
     }
 
-    // Вставляем данные
     for (int i = 0; i < pasteRows; ++i) {
         QStringList cells = rows[i].split('\t');
         for (int j = 0; j < cells.count() && j < pasteCols; ++j) {
-            int row = startRow + i;
-            int col = startCol + j;
-
-            QTableWidgetItem *item = table->item(row, col);
-            if (!item) {
-                item = new QTableWidgetItem;
-                table->setItem(row, col, item);
-            }
-            item->setText(cells[j]);
+            QModelIndex idx = model->index(startRow + i, startCol + j);
+            model->setData(idx, cells[j], Qt::EditRole);
         }
     }
 
     emit contentChanged(true);
 }
 
-
-void TableDocument::slotAddTab(int count)
-{
-    if (m_tabs->count() == 0) {
-        for (int i = 0; i < count; ++i) {
-            QTableWidget *table = new QTableWidget(10, 5, this);
-            table->setAttribute(Qt::WA_DeleteOnClose);
-            table->setContextMenuPolicy(Qt::CustomContextMenu);
-
-            // Устанавливаем заголовки столбцов
-            QStringList headers;
-            for (int col = 0; col < 5; ++col) {
-                headers << QString("Столбец %1").arg(col + 1);
-            }
-            table->setHorizontalHeaderLabels(headers);
-
-            // Подключаем контекстное меню
-            connect(table, &QTableWidget::customContextMenuRequested,
-                    this, [this, table](const QPoint &pos) {
-                        showTableContextMenu(table, pos);
-                    });
-
-            // Подключаем сигнал изменения ячеек
-            connect(table, &QTableWidget::itemChanged,
-                    this, [this](QTableWidgetItem *item) {
-                        Q_UNUSED(item);
-                        emit contentChanged(true);
-                    });
-
-            m_tabs->addTab(table, tr("Лист %1").arg(i + 1));
-
-
-            // Добавляем действия для горячих клавиш
-            QAction *copyAction = new QAction(tr("Copy"), table);
-            copyAction->setShortcut(QKeySequence::Copy);
-            connect(copyAction, &QAction::triggered, table, [this, table]() {
-                copySelection(table);
-            });
-            table->addAction(copyAction);
-
-            QAction *cutAction = new QAction(tr("Cut"), table);
-            cutAction->setShortcut(QKeySequence::Cut);
-            connect(cutAction, &QAction::triggered, table, [this, table]() {
-                cutSelection(table);
-            });
-            table->addAction(cutAction);
-
-            QAction *pasteAction = new QAction(tr("Paste"), table);
-            pasteAction->setShortcut(QKeySequence::Paste);
-            connect(pasteAction, &QAction::triggered, table, [this, table]() {
-                pasteSelection(table);
-            });
-            table->addAction(pasteAction);
-
-            table->setContextMenuPolicy(Qt::CustomContextMenu);
-        }
-    }
-}
 void TableDocument::slotCloseTab(const int index)
 {
     if (m_tabs->count() > 1) {
+        QWidget *widget = m_tabs->widget(index);
+        m_tabs->removeTab(index);
 
-        auto widget = m_tabs->widget(index);
         if (widget) {
-            widget->close();
-            m_tabs->removeTab(index);
+            if (auto *tableView = qobject_cast<QTableView*>(widget)) {
+                tableView->setModel(nullptr);
+            }
+            widget->deleteLater();
         }
 
         m_tabs->setTabsClosable(m_tabs->count() > 1);
     }
+}
+
+// clean up all models by closing
+void TableDocument::cleanupModels()
+{
+    for (int i = 0; i < m_tabs->count(); ++i) {
+        if (auto *tableView = qobject_cast<QTableView*>(m_tabs->widget(i))) {
+            if (auto *model = tableView->model()) {
+                disconnect(model, nullptr, this, nullptr);
+                tableView->setModel(nullptr);
+            }
+        }
+    }
+}
+
+void TableDocument::refreshCurrentCell()
+{
+    QTabWidget *tabs = findChild<QTabWidget*>();
+    QTableView *view = tabs ? qobject_cast<QTableView*>(tabs->currentWidget()) : nullptr;
+
+    if (!view || !view->selectionModel() || !view->selectionModel()->currentIndex().isValid()) {
+        emit currentCellChanged(QString(), QString());
+        return;
+    }
+
+    const QModelIndex cur = view->selectionModel()->currentIndex();
+
+    QString colHeader = view->model()->headerData(cur.column(), Qt::Horizontal, Qt::DisplayRole).toString();
+
+    const QString address = QString("%1, строка %2").arg(colHeader).arg(cur.row() + 1);
+
+    const QString value = view->model()->data(cur, Qt::DisplayRole).toString();
+
+    emit currentCellChanged(address, value);
 }
