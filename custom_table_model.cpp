@@ -49,12 +49,20 @@ QVariant CustomTableModel::headerData(int section, Qt::Orientation orientation, 
 {
     if (role == Qt::DisplayRole) {
         if (orientation == Qt::Horizontal) {
-
+            // Если есть реальный заголовок (не пустой и не сгенерированный), используем его
             if (section < m_headers.size() && !m_headers.at(section).isEmpty()) {
-                return m_headers.at(section);
+                QString header = m_headers.at(section);
+                // Проверяем, не является ли заголовок сгенерированным "Column N"
+                // Если да — игнорируем его и генерируем заново по текущей позиции
+                if (!header.startsWith("Column ")) {
+                    return header;
+                }
+                // Если это сгенерированный заголовок — перегенерируем по актуальной позиции
             }
+            // Генерируем заголовок на основе текущей позиции столбца
             return QString("Column %1").arg(section + 1);
         } else {
+            // Вертикальные заголовки (номера строк)
             return section + 1;
         }
     }

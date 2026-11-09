@@ -9,7 +9,6 @@
 #include <QSettings>
 #include <QTabBar>
 #include <QVBoxLayout>
-#include <QDebug>
 
 TableDocument::TableDocument(QWidget *parent)
     : QWidget(parent)
@@ -23,7 +22,6 @@ TableDocument::TableDocument(QWidget *parent)
     connect(m_tabs, &QTabWidget::tabCloseRequested, this, &TableDocument::slotCloseTab);
     loadSettings();
 
-    // Main layout
     auto *mainLayout = new QVBoxLayout();
     mainLayout->addWidget(m_tabs);
     setLayout(mainLayout);
@@ -47,11 +45,7 @@ void TableDocument::loadSettings()
 void TableDocument::saveSettings()
 {
     QSettings settings;
-    // settings.setValue(QStringLiteral("Document/SheetTabBarVisible"), isTabBarVisible());
-    // settings.setValue(QStringLiteral("Document/SheetTabBarPosition"), tabBarPosition());
-    // settings.setValue(QStringLiteral("Document/SheetTabBarAutoHide"), isTabBarAutoHide());
 }
-
 
 bool TableDocument::isTabBarVisible() const { return m_tabBarVisible; }
 
@@ -83,7 +77,6 @@ void TableDocument::_setTabBarVisible(const bool visible)
         m_tabs->tabBar()->setVisible(visible);
 }
 
-
 QTabWidget::TabPosition TableDocument::tabBarPosition() const { return m_tabs->tabPosition(); }
 
 void TableDocument::setTabBarPosition(const QTabWidget::TabPosition position)
@@ -104,7 +97,6 @@ void TableDocument::initTabBarPosition()
 {
     emit tabBarPositionChanged(tabBarPosition());
 }
-
 
 bool TableDocument::isTabBarAutoHide() const { return m_tabs->tabBarAutoHide(); }
 
@@ -127,44 +119,35 @@ void TableDocument::initTabBarAutoHide()
     emit tabBarAutoHideChanged(isTabBarAutoHide());
 }
 
-// === slotAddTab: creates QTableView + CustomTableModel ===
 void TableDocument::slotAddTab(const int count)
 {
     if (m_tabs->count() == 0) {
         for (int i = 0; i < count; ++i) {
-            // create view
             auto *tableView = new QTableView();
             tableView->setObjectName(QStringLiteral("Sheet%1").arg(i + 1));
 
-            // create model & link to view
             auto *model = new CustomTableModel(tableView);
             tableView->setModel(model);
 
-            // signals for QML-panel
             connect(tableView->selectionModel(), &QItemSelectionModel::currentChanged,
                     this, [this]() { refreshCurrentCell(); });
             connect(model, &QAbstractItemModel::dataChanged,
                     this, [this]() { refreshCurrentCell(); });
 
-            // initialize blank table 15x5
             QStringList headers;
             for (int col = 0; col < 5; ++col) {
                 headers << "";
             }
             model->initialize(15, 5, headers);
 
-            // context menu
             tableView->setContextMenuPolicy(Qt::CustomContextMenu);
             connect(tableView, &QTableView::customContextMenuRequested,
                     this, [this, tableView](const QPoint &pos) {
                         showTableContextMenu(tableView, pos);
                     });
 
-            // data changed signals
-            connect(model, &QAbstractItemModel::dataChanged,
-                    this, &TableDocument::onModelDataChanged);
+            connect(model, &QAbstractItemModel::dataChanged, this, &TableDocument::onModelDataChanged);
 
-            // add tab
             m_tabs->addTab(tableView, tr("Sheet %1").arg(i + 1));
         }
     }
@@ -175,15 +158,11 @@ void TableDocument::onModelDataChanged()
     emit contentChanged(true);
 }
 
-
 void TableDocument::showTableContextMenu(QTableView *tableView, const QPoint &pos)
 {
-    if (!tableView)
-        return;
-
+    if (!tableView) return;
     auto *model = qobject_cast<CustomTableModel*>(tableView->model());
-    if (!model)
-        return;
+    if (!model) return;
 
     QMenu menu;
     QAction *actionAddRow = menu.addAction(tr("Добавить строку"));
@@ -196,10 +175,8 @@ void TableDocument::showTableContextMenu(QTableView *tableView, const QPoint &po
     QAction *actionPaste = menu.addAction(tr("Вставить"));
 
     QAction *selectedAction = menu.exec(tableView->mapToGlobal(pos));
-    if (!selectedAction)
-        return;
+    if (!selectedAction) return;
 
-    // get current cursor position
     QModelIndex currentIndex = tableView->currentIndex();
     int currentRow = currentIndex.isValid() ? currentIndex.row() : 0;
     int currentCol = currentIndex.isValid() ? currentIndex.column() : 0;
@@ -232,22 +209,15 @@ void TableDocument::showTableContextMenu(QTableView *tableView, const QPoint &po
         pasteSelection(tableView);
     }
 }
-
-
 void TableDocument::copySelection(QTableView *tableView)
 {
-    if (!tableView || !tableView->selectionModel())
-        return;
-
+    if (!tableView || !tableView->selectionModel()) return;
     auto *model = tableView->model();
-    if (!model)
-        return;
+    if (!model) return;
 
     QModelIndexList selected = tableView->selectionModel()->selectedIndexes();
-    if (selected.isEmpty())
-        return;
+    if (selected.isEmpty()) return;
 
-    // get highlight borders
     int minRow = model->rowCount();
     int maxRow = 0;
     int minCol = model->columnCount();
@@ -260,32 +230,35 @@ void TableDocument::copySelection(QTableView *tableView)
         maxCol = qMax(maxCol, index.column());
     }
 
+    qDebug() << "[COPY] Выделено ячеек:" << selected.count();
+    qDebug() << "[COPY] Границы: строки" << minRow << "-" << maxRow << ", столбцы" << minCol << "-" << maxCol;
+
     QString clipboardText;
     for (int row = minRow; row <= maxRow; ++row) {
         QStringList rowText;
         for (int col = minCol; col <= maxCol; ++col) {
             QModelIndex idx = model->index(row, col);
-            rowText << model->data(idx, Qt::DisplayRole).toString();
+            QString value = model->data(idx, Qt::DisplayRole).toString();
+            rowText << value;
+            qDebug() << "[COPY] Ячейка [" << row << "," << col << "]:" << value;
         }
         clipboardText += rowText.join('\t') + '\n';
     }
+
+    qDebug() << "[COPY] Текст в буфере обмена:";
+    qDebug() << clipboardText;
 
     QApplication::clipboard()->setText(clipboardText);
 }
 
 void TableDocument::cutSelection(QTableView *tableView)
 {
-    if (!tableView || !tableView->selectionModel())
-        return;
-
+    if (!tableView || !tableView->selectionModel()) return;
     auto *model = tableView->model();
-    if (!model)
-        return;
+    if (!model) return;
 
-    // copy strings
     copySelection(tableView);
 
-    // clean highlight strings
     QModelIndexList selected = tableView->selectionModel()->selectedIndexes();
     for (const QModelIndex &index : selected) {
         model->setData(index, QVariant(), Qt::EditRole);
@@ -293,29 +266,38 @@ void TableDocument::cutSelection(QTableView *tableView)
 
     emit contentChanged(true);
 }
-
 void TableDocument::pasteSelection(QTableView *tableView)
 {
-    if (!tableView)
-        return;
-
+    if (!tableView) return;
     auto *model = qobject_cast<CustomTableModel*>(tableView->model());
-    if (!model)
-        return;
+    if (!model) return;
 
     QString clipboardText = QApplication::clipboard()->text();
-    if (clipboardText.isEmpty())
+    if (clipboardText.isEmpty()) {
+        qDebug() << "[PASTE] Буфер обмена пуст";
         return;
+    }
 
-    QStringList rows = clipboardText.split('\n', Qt::SkipEmptyParts);
-    if (rows.isEmpty())
-        return;
+    qDebug() << "[PASTE] Текст из буфера обмена:";
+    qDebug() << clipboardText;
+
+    // Используем KeepEmptyParts, чтобы сохранить пустые строки
+    QStringList rows = clipboardText.split('\n', Qt::KeepEmptyParts);
+
+    // Убираем последнюю пустую строку (от завершающего \n)
+    if (!rows.isEmpty() && rows.last().isEmpty()) {
+        rows.removeLast();
+    }
+
+    if (rows.isEmpty()) return;
 
     int pasteRows = rows.count();
     int pasteCols = 0;
     for (const QString &row : rows) {
-        pasteCols = qMax(pasteCols, row.split('\t').count());
+        pasteCols = qMax(pasteCols, row.split('\t', Qt::KeepEmptyParts).count());
     }
+
+    qDebug() << "[PASTE] Размеры вставляемого блока:" << pasteRows << "x" << pasteCols;
 
     int startRow = 0;
     int startCol = 0;
@@ -323,23 +305,30 @@ void TableDocument::pasteSelection(QTableView *tableView)
     if (currentIndex.isValid()) {
         startRow = currentIndex.row();
         startCol = currentIndex.column();
+        qDebug() << "[PASTE] Текущая ячейка:" << startRow << "," << startCol;
+    } else {
+        qDebug() << "[PASTE] Текущая ячейка невалидна, используем 0,0";
     }
 
     int requiredRows = startRow + pasteRows;
     int requiredCols = startCol + pasteCols;
 
     if (requiredRows > model->rowCount()) {
+        qDebug() << "[PASTE] Расширяем таблицу: добавляем строк" << (requiredRows - model->rowCount());
         model->insertRows(model->rowCount(), requiredRows - model->rowCount());
     }
     if (requiredCols > model->columnCount()) {
+        qDebug() << "[PASTE] Расширяем таблицу: добавляем столбцов" << (requiredCols - model->columnCount());
         model->insertColumns(model->columnCount(), requiredCols - model->columnCount());
     }
 
     for (int i = 0; i < pasteRows; ++i) {
-        QStringList cells = rows[i].split('\t');
-        for (int j = 0; j < cells.count() && j < pasteCols; ++j) {
+        QStringList cells = rows[i].split('\t', Qt::KeepEmptyParts);
+        for (int j = 0; j < pasteCols; ++j) {
             QModelIndex idx = model->index(startRow + i, startCol + j);
-            model->setData(idx, cells[j], Qt::EditRole);
+            QString value = (j < cells.count()) ? cells[j] : QString();
+            qDebug() << "[PASTE] Записываем в [" << (startRow + i) << "," << (startCol + j) << "]:" << value;
+            model->setData(idx, value, Qt::EditRole);
         }
     }
 
@@ -363,7 +352,6 @@ void TableDocument::slotCloseTab(const int index)
     }
 }
 
-// clean up all models by closing
 void TableDocument::cleanupModels()
 {
     for (int i = 0; i < m_tabs->count(); ++i) {
@@ -387,12 +375,8 @@ void TableDocument::refreshCurrentCell()
     }
 
     const QModelIndex cur = view->selectionModel()->currentIndex();
-
     QString colHeader = view->model()->headerData(cur.column(), Qt::Horizontal, Qt::DisplayRole).toString();
-
     const QString address = QString("%1, строка %2").arg(colHeader).arg(cur.row() + 1);
-
     const QString value = view->model()->data(cur, Qt::DisplayRole).toString();
-
     emit currentCellChanged(address, value);
 }

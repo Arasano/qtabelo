@@ -52,10 +52,15 @@
 #include "properties_dialog.h"
 #include "recent_document_list.h"
 #include "table_info_provider.h"
-
+#include <QTableView>
+#include <QAbstractItemModel>
+#include <QFile>
+#include <QTextStream>
+#include <QStringConverter>
 #include <QDockWidget>
 #include <QQuickWidget>
 #include <QQmlContext>
+#include <QQuickItem>
 
 ApplicationWindow::ApplicationWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -71,18 +76,18 @@ ApplicationWindow::ApplicationWindow(QWidget *parent)
     setCentralWidget(m_documentManager);
 
 
-    // Создаём поставщик данных
     m_tableInfoProvider = new TableInfoProvider(this);
 
-    // Создаём QQuickWidget
     m_infoQuickWidget = new QQuickWidget;
     m_infoQuickWidget->setResizeMode(QQuickWidget::SizeRootObjectToView);
 
-    // Регистрируем объект в QML-контексте (ВАЖНО: до setSource!)
     m_infoQuickWidget->rootContext()->setContextProperty("tableInfo", m_tableInfoProvider);
 
-    // Загружаем QML-файл
     m_infoQuickWidget->setSource(QUrl(QStringLiteral("qrc:/TableInfo.qml")));
+
+    if (QQuickItem *qmlRoot = m_infoQuickWidget->rootObject()) {
+        connect(qmlRoot, SIGNAL(saveRequested()), this, SLOT(slotSave()));
+    }
 
     // Создаём док-виджет и размещаем в нём QQuickWidget
     m_infoDock = new QDockWidget(tr("Table Info"), this);
@@ -939,10 +944,6 @@ void ApplicationWindow::updateWindowTitle()
 }
 
 
-//
-// Document
-//
-
 DocumentWidget *ApplicationWindow::createDocument()
 {
     auto *document = new DocumentWidget;
@@ -973,6 +974,21 @@ DocumentWidget *ApplicationWindow::createDocument()
     connect(document, &TableDocument::contentChanged, this, [this]() {
         updateTableInfo();
     });
+
+    // === НОВОЕ: Подключение сигнала текущей ячейки ===
+    connect(document, &TableDocument::currentCellChanged, this,
+            [this](const QString &address, const QString &value) {
+                m_tableInfoProvider->setCellAddress(address);
+                m_tableInfoProvider->setCellValue(value);
+            });
+
+    QTabWidget *tabs = document->findChild<QTabWidget*>();
+    if (tabs) {
+        connect(tabs, &QTabWidget::currentChanged, this, [this, document]() {
+            updateTableInfo();
+            document->refreshCurrentCell();
+        });
+    }
 
     // Initialize
     document->initTabBarVisible();
@@ -1005,8 +1021,30 @@ bool ApplicationWindow::openDocument(const QUrl &url)
 bool ApplicationWindow::loadDocument(const QUrl &url)
 {
     DocumentWidget *document = createDocument();
-    if (!true) {
-        // Given document could not be loaded
+    if (!document)
+        return false;
+
+    document->slotAddTab(1);
+
+    QTabWidget *tabs = document->findChild<QTabWidget*>();
+    if (!tabs) {
+        document->close();
+        return false;
+    }
+
+    QTableView *tableView = qobject_cast<QTableView*>(tabs->currentWidget());
+    if (!tableView) {
+        document->close();
+        return false;
+    }
+
+    CustomTableModel *model = qobject_cast<CustomTableModel*>(tableView->model());
+    if (!model) {
+        document->close();
+        return false;
+    }
+
+    if (!importCsvToTable(url.toLocalFile(), model)) {
         document->close();
         return false;
     }
@@ -1014,7 +1052,6 @@ bool ApplicationWindow::loadDocument(const QUrl &url)
     document->show();
     document->setUrl(url);
     m_recentDocuments->addUrl(url);
-
     documentCreated();
 
     return true;
@@ -1023,9 +1060,39 @@ bool ApplicationWindow::loadDocument(const QUrl &url)
 
 bool ApplicationWindow::saveDocument(DocumentWidget *document, const QUrl &altUrl)
 {
-    Q_UNUSED(altUrl)
+    QUrl url = altUrl.isEmpty() ? document->url() : altUrl;
+
+    if (!url.isValid()) {
+        QMessageBox::critical(this, tr("Error"), tr("Invalid file location."));
+        return false;
+    }
+
+    QTabWidget *tabs = document->findChild<QTabWidget*>();
+    if (!tabs) {
+        QMessageBox::critical(this, tr("Error"), tr("No tabs found."));
+        return false;
+    }
+
+    QTableView *tableView = qobject_cast<QTableView*>(tabs->currentWidget());
+    if (!tableView) {
+        QMessageBox::critical(this, tr("Error"), tr("No table view found."));
+        return false;
+    }
+
+    QAbstractItemModel *model = tableView->model();
+    if (!model) {
+        QMessageBox::critical(this, tr("Error"), tr("No table data to save."));
+        return false;
+    }
+
+    if (!exportTableToCsv(model, url.toLocalFile())) {
+        QMessageBox::critical(this, tr("Error"), tr("Could not save the file."));
+        return false;
+    }
 
     document->resetModified();
+    document->setUrl(url);
+    m_recentDocuments->addUrl(url);
 
     return true;
 }
@@ -1094,6 +1161,8 @@ void ApplicationWindow::documentActivated(QMdiSubWindow *subWindow)
         m_actionShowSheetTabBar->setChecked(document->isTabBarVisible());
         updateActionsSheetTabBarPosition(document->tabBarPosition());
         m_actionSheetTabBarAutoHide->setChecked(document->isTabBarAutoHide());
+
+        document->refreshCurrentCell();
     }
     else {
         m_actionShowSheetTabBar->setChecked(true);
@@ -1153,15 +1222,13 @@ void ApplicationWindow::documentUrlChanged(const QUrl &url)
 void ApplicationWindow::documentClosed()
 {
     const int count = m_documentManager->subWindowCount();
-
-    emit documentCountChanged(count);
     enableActionCloseOther(count >= 2);
+
+    // Откладываем отправку сигнала для безопасной работы при разрушении объектов
+    QMetaObject::invokeMethod(this, [this, count]() {
+        emit documentCountChanged(count);
+    }, Qt::QueuedConnection);
 }
-
-
-//
-//
-//
 
 DocumentWidget *ApplicationWindow::extractDocument(const QMdiSubWindow *subWindow) const
 {
@@ -1464,4 +1531,138 @@ void ApplicationWindow::slotFullScreen(const bool checked)
         setWindowState(windowState() | Qt::WindowFullScreen);
     else
         setWindowState(windowState() & ~Qt::WindowFullScreen);
+}
+
+bool ApplicationWindow::exportTableToCsv(QAbstractItemModel *model, const QString &filename)
+{
+    if (!model)
+        return false;
+
+    QFile file(filename);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QMessageBox::critical(this, tr("Error"),
+                              tr("Could not open file for writing: %1").arg(filename));
+        return false;
+    }
+
+    QTextStream out(&file);
+    out.setEncoding(QStringConverter::Utf8);
+    out.setGenerateByteOrderMark(true);
+
+    // Лямбда для экранирования полей CSV
+    auto escapeCsvField = [](const QString &field) -> QString {
+        if (field.contains(';') || field.contains('"') || field.contains('\n') || field.contains('\r')) {
+            QString escaped = field;
+            escaped.replace("\"", "\"\"");  // Удваиваем кавычки
+            return "\"" + escaped + "\"";   // Оборачиваем в кавычки
+        }
+        return field;
+    };
+
+    int rows = model->rowCount();
+    int cols = model->columnCount();
+
+    // Записываем заголовки
+    QStringList headerFields;
+    for (int col = 0; col < cols; ++col) {
+        QVariant headerData = model->headerData(col, Qt::Horizontal, Qt::DisplayRole);
+        headerFields << escapeCsvField(headerData.toString());
+    }
+    out << headerFields.join(';') << '\n';
+
+    // Записываем данные
+    for (int row = 0; row < rows; ++row) {
+        QStringList rowFields;
+        for (int col = 0; col < cols; ++col) {
+            QModelIndex index = model->index(row, col);
+            QVariant data = model->data(index, Qt::DisplayRole);
+            rowFields << escapeCsvField(data.toString());
+        }
+        out << rowFields.join(';') << '\n';
+    }
+
+    file.close();
+    return true;
+}
+
+
+bool ApplicationWindow::importCsvToTable(const QString &filename, CustomTableModel *model)
+{
+    if (!model)
+        return false;
+
+    QFile file(filename);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QMessageBox::critical(this, tr("Error"),
+                              tr("Could not open file for reading: %1").arg(filename));
+        return false;
+    }
+
+    QTextStream in(&file);
+    in.setEncoding(QStringConverter::Utf8);
+
+    // Лямбда для разбора CSV-строки с учётом кавычек
+    auto parseCsvLine = [](const QString &line) -> QStringList {
+        QStringList fields;
+        QString field;
+        bool inQuotes = false;
+
+        for (int i = 0; i < line.size(); ++i) {
+            QChar ch = line[i];
+
+            if (inQuotes) {
+                if (ch == '"') {
+                    // Проверяем на экранированную кавычку ""
+                    if (i + 1 < line.size() && line[i + 1] == '"') {
+                        field += '"';
+                        ++i;  // Пропускаем следующую кавычку
+                    } else {
+                        // Конец цитирования
+                        inQuotes = false;
+                    }
+                } else {
+                    field += ch;
+                }
+            } else {
+                if (ch == '"') {
+                    // Начало цитирования
+                    inQuotes = true;
+                } else if (ch == ';') {
+                    // Разделитель полей
+                    fields.append(field);
+                    field.clear();
+                } else {
+                    field += ch;
+                }
+            }
+        }
+
+        // Добавляем последнее поле
+        fields.append(field);
+        return fields;
+    };
+
+    QStringList headers;
+    QList<QStringList> rows;
+
+    bool firstLine = true;
+    while (!in.atEnd()) {
+        QString line = in.readLine();
+        if (line.isEmpty())
+            continue;
+
+        QStringList fields = parseCsvLine(line);
+
+        if (firstLine) {
+            headers = fields;
+            firstLine = false;
+        } else {
+            rows.append(fields);
+        }
+    }
+
+    file.close();
+    model->loadFromCsv(headers, rows);
+
+    return true;
 }

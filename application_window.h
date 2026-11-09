@@ -40,6 +40,8 @@ class RecentDocumentList;
 class QDockWidget;
 class QQuickWidget;
 class TableInfoProvider;
+class QAbstractItemModel;
+class CustomTableModel;
 
 
 class ApplicationWindow : public QMainWindow
@@ -82,6 +84,9 @@ private:
     bool saveDocument(DocumentWidget *document, const QUrl &altUrl);
 
     void updateTableInfo();
+
+    bool exportTableToCsv(QAbstractItemModel *model, const QString &filename);
+    bool importCsvToTable(const QString &filename, CustomTableModel *model);
 
     QDockWidget *m_infoDock;
     QQuickWidget *m_infoQuickWidget;

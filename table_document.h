@@ -4,7 +4,6 @@
 #include <QWidget>
 #include <QTabWidget>
 #include <QTableView>
-#include <QPoint>
 
 class CustomTableModel;
 
@@ -21,8 +20,6 @@ public:
     bool isTabBarVisible() const;
     QTabWidget::TabPosition tabBarPosition() const;
     bool isTabBarAutoHide() const;
-
-    // cleanup models by closing
     void cleanupModels();
     void refreshCurrentCell();
 
@@ -31,7 +28,6 @@ signals:
     void tabBarPositionChanged(const QTabWidget::TabPosition position);
     void tabBarAutoHideChanged(const bool enabled);
     void contentChanged(bool modified);
-    // for QML-panel
     void currentCellChanged(const QString &address, const QString &value);
 
 public slots:
@@ -44,17 +40,13 @@ public slots:
     void setTabBarAutoHide(const bool enabled);
     void resetTabBarAutoHide();
     void initTabBarAutoHide();
-
     void showTableContextMenu(QTableView *tableView, const QPoint &pos);
     void onModelDataChanged();
-
-protected slots:
     void slotAddTab(const int count);
 
 private:
     void loadSettings();
     void _setTabBarVisible(const bool visible);
-
     void copySelection(QTableView *tableView);
     void cutSelection(QTableView *tableView);
     void pasteSelection(QTableView *tableView);
